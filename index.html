@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>警察抓小偷 · 实时追逐版</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:radial-gradient(1200px 700px at 50% -10%,#172642,#0b1220);color:#e8eefc;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh}
+body{display:flex;flex-direction:column;align-items:center;padding:10px 8px 30px}
+h1{margin:6px 0 2px;font-size:26px;letter-spacing:2px;text-shadow:0 2px 14px rgba(77,163,255,.45)}
+h1 small{font-size:13px;color:#8fa3c8;font-weight:400;margin-left:8px;letter-spacing:0}
+#hud{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;background:#111a2e;border:1px solid #22304f;border-radius:12px;padding:8px 14px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.35);margin-top:6px}
+.stat{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.stat b{font-variant-numeric:tabular-nums;color:#fff;min-width:2ch;text-align:right}
+#hud button{background:#1d2c4d;color:#e8eefc;border:1px solid #33508a;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:14px}
+#hud button:hover{background:#284073}
+#hTime.low{color:#ff5c5c;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.35}}
+#stage{position:relative;margin-top:10px;line-height:0}
+#cv{width:min(760px,96vw);height:auto;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.5),0 0 0 1px #22304f;touch-action:none;background:#0a0f1e;display:block}
+#overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(6,10,20,.74);backdrop-filter:blur(3px);border-radius:12px;opacity:0;pointer-events:none;transition:opacity .22s;z-index:5}
+#overlay.show{opacity:1;pointer-events:auto}
+.panel{background:#101a30;border:1px solid #2a3a5f;border-radius:14px;padding:20px 26px;max-width:88%;max-height:92%;overflow:auto;text-align:center;box-shadow:0 18px 60px rgba(0,0,0,.6);line-height:1.55}
+.panel .title{font-size:24px;font-weight:700;margin-bottom:2px}
+.panel .sub{color:#8fa3c8;font-size:13px;margin-bottom:8px}
+.panel .desc{font-size:13.5px;text-align:left;background:#0b1426;border:1px dashed #2a3a5f;border-radius:10px;padding:10px 14px;margin:10px 0;color:#c7d4ee}
+.panel .desc b{color:#ffd166}
+.panel .btns{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap}
+.panel button{background:#1d2c4d;color:#e8eefc;border:1px solid #33508a;border-radius:10px;padding:9px 20px;font-size:15px;cursor:pointer;transition:.15s}
+.panel button:hover{background:#284073;transform:translateY(-1px)}
+.panel button.primary{background:#2f6fd0;border-color:#4d8dff}
+.panel button.primary:hover{background:#3a7ce4}
+.panel .hiscore{margin-top:12px;color:#ffd166;font-size:14px}
+.panel .rows{margin:8px 0;font-size:15px}
+.panel .rows div{padding:2px 0}
+.panel .rows span{color:#ffd166;font-weight:700}
+#hint{margin-top:10px;color:#7f92b8;font-size:12.5px;text-align:center}
+#dpad{display:none;position:fixed;right:14px;bottom:14px;z-index:20;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(3,54px);gap:6px;opacity:.85}
+#dpad button{background:rgba(29,44,77,.85);border:1px solid #33508a;border-radius:12px;color:#e8eefc;font-size:20px;touch-action:none}
+#dpad button:active{background:#3a7ce4}
+#dpad button[data-d="U"]{grid-column:2;grid-row:1}
+#dpad button[data-d="L"]{grid-column:1;grid-row:2}
+#dpad button[data-d="D"]{grid-column:2;grid-row:2}
+#dpad button[data-d="R"]{grid-column:3;grid-row:2}
+</style>
+</head>
+<body>
+<h1>🚨 警察抓小偷<small>实时追逐 · 网页版</small></h1>
+
+<div id="hud">
+  <span class="stat">🚨 关卡 <b id="hLevel">-</b></span>
+  <span class="stat">🏆 分数 <b id="hScore">0</b></span>
+  <span class="stat">⏱ 时间 <b id="hTime">-</b></span>
+  <span class="stat">💰 金币 <b id="hGold">-</b></span>
+  <span class="stat">🥷 小偷 <b id="hThief">-</b></span>
+  <span class="stat">📦 已偷 <b id="hStolen">-</b></span>
+  <button id="btnMute" title="静音 (M)">🔊</button>
+  <button id="btnPause" title="暂停 (P)">⏸</button>
+</div>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="overlay"><div class="panel" id="ovpanel"></div></div>
+</div>
+
+<div id="hint">⌨ 方向键 / WASD 移动 · P 暂停 · M 静音 · 触屏：在地图上滑动或使用屏幕方向键</div>
+
+<div id="dpad">
+  <button data-d="U">▲</button>
+  <button data-d="L">◀</button>
+  <button data-d="D">▼</button>
+  <button data-d="R">▶</button>
+</div>
+
+<script>
+'use strict';
+// ===================== 常量 =====================
+const TILE=40, COLS=19, ROWS=15, W=COLS*TILE, H=ROWS*TILE;
+const DIRS4=[[1,0],[-1,0],[0,1],[0,-1]];
+const VECD={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]};
+const OPP={U:'D',D:'U',L:'R',R:'L'};
+const DIFF={
+  easy:  {label:'简单', police:5.6, thief:4.05, time:110, thieves:2, panic:5},
+  normal:{label:'普通', police:5.7, thief:4.6,  time:95,  thieves:3, panic:6},
+  hard:  {label:'困难', police:5.8, thief:5.05, time:80,  thieves:4, panic:7}
+};
+const EMOJI_FONT='"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+
+// ===================== DOM =====================
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const dpr=Math.min(window.devicePixelRatio||1,2);
+cv.width=W*dpr; cv.height=H*dpr; cv.style.aspectRatio=W+'/'+H;
+ctx.scale(dpr,dpr);
+const bg=document.createElement('canvas'); bg.width=W*dpr; bg.height=H*dpr;
+const bctx=bg.getContext('2d'); bctx.scale(dpr,dpr);
+const $=id=>document.getElementById(id);
+const hLevel=$('hLevel'),hScore=$('hScore'),hTime=$('hTime'),hGold=$('hGold'),hThief=$('hThief'),hStolen=$('hStolen');
+const overlay=$('overlay'), ovpanel=$('ovpanel'), dpad=$('dpad');
+
+// ===================== 游戏状态 =====================
+let state='menu';
+let grid=null, golds=[], thieves=[], powerups=[], particles=[], floaters=[];
+let player=null, hideout={x:COLS-2,y:ROWS-2};
+let level=1, score=0, diffKey='normal', cfg=DIFF.normal;
+let high=+(localStorage.getItem('pct-high')||0);
+let timeLeft=0, totalGold=0, stolen=0;
+let combo=0, comboTimer=0;
+let policeField=null, goldField=null, hideoutField=null, goldFieldDirty=true;
+let fieldAcc=0, powerupTimer=8, tickAcc=0;
+let effects={speed:0,freeze:0};
+let shake=0, animT=0;
+
+// ===================== 工具 =====================
+function open(x,y){return x>=0&&x<COLS&&y>=0&&y<ROWS&&grid[y][x]===0;}
+function bfs(sources){
+  const dist=Array.from({length:ROWS},()=>Array(COLS).fill(Infinity));
+  const q=[];
+  for(const [x,y] of sources){dist[y][x]=0;q.push(x,y);}
+  for(let i=0;i<q.length;i+=2){
+    const x=q[i],y=q[i+1],d=dist[y][x];
+    for(const [dx,dy] of DIRS4){
+      const nx=x+dx,ny=y+dy;
+      if(open(nx,ny)&&dist[ny][nx]===Infinity){dist[ny][nx]=d+1;q.push(nx,ny);}
+    }
+  }
+  return dist;
+}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+function floater(x,y,text,color){floaters.push({x,y,text,color,life:1.25});}
+function burst(x,y){
+  for(let i=0;i<16;i++){
+    const a=Math.random()*Math.PI*2, sp=60+Math.random()*140;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:.45+Math.random()*.35,
+      color:['#ffd166','#ff6b6b','#ffffff','#4da3ff'][(Math.random()*4)|0]});
+  }
+}
+
+// ===================== 音效 =====================
+let audioCtx=null, muted=false;
+function ensureAudio(){
+  if(!audioCtx){try{audioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
+}
+function beep(f,d=0.09,type='square',v=0.12,slide=0){
+  if(muted||!audioCtx)return;
+  try{
+    const t=audioCtx.currentTime,o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type=type;o.frequency.setValueAtTime(f,t);
+    if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(40,f+slide),t+d);
+    g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    o.connect(g);g.connect(audioCtx.destination);o.start(t);o.stop(t+d+0.02);
+  }catch(e){}
+}
+function chord(freqs,gap=0.08,d=0.1,type='square',v=0.12){freqs.forEach((f,i)=>setTimeout(()=>beep(f,d,type,v),i*gap*1000));}
+
+// ===================== 迷宫生成 =====================
+function genMaze(){
+  const g=Array.from({length:ROWS},()=>Array(COLS).fill(1));
+  g[1][1]=0;
+  const stack=[[1,1]];
+  const dirs=[[2,0],[-2,0],[0,2],[0,-2]];
+  while(stack.length){
+    const [cx,cy]=stack[stack.length-1];
+    const opts=dirs.filter(([dx,dy])=>{
+      const nx=cx+dx,ny=cy+dy;
+      return nx>0&&nx<COLS-1&&ny>0&&ny<ROWS-1&&g[ny][nx]===1;
+    });
+    if(opts.length){
+      const [dx,dy]=opts[(Math.random()*opts.length)|0];
+      g[cy+dy/2][cx+dx/2]=0;g[cy+dy][cx+dx]=0;
+      stack.push([cx+dx,cy+dy]);
+    }else stack.pop();
+  }
+  // 打通一些墙形成环路，追逐更有趣
+  let removed=0,tries=0;
+  while(removed<26&&tries<600){
+    tries++;
+    const x=1+((Math.random()*(COLS-2))|0), y=1+((Math.random()*(ROWS-2))|0);
+    if(g[y][x]===1){
+      const h=g[y][x-1]===0&&g[y][x+1]===0, v=g[y-1][x]===0&&g[y+1][x]===0;
+      if((h&&!v)||(v&&!h)){g[y][x]=0;removed++;}
+    }
+  }
+  return g;
+}
+
+// ===================== 背景绘制（每关一次） =====================
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();
+}
+function buildBG(){
+  bctx.clearRect(0,0,W,H);
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    bctx.fillStyle=(x+y)%2?'#0f1a33':'#12203d';
+    bctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+  }
+  // 老巢
+  const hx=hideout.x*TILE,hy=hideout.y*TILE;
+  bctx.fillStyle='#3a1f2d';roundRect(bctx,hx+2,hy+2,TILE-4,TILE-4,8);bctx.fill();
+  bctx.strokeStyle='#a3405c';bctx.lineWidth=2;bctx.stroke();
+  bctx.font='24px '+EMOJI_FONT;bctx.textAlign='center';bctx.textBaseline='middle';
+  bctx.fillText('🏚️',hx+TILE/2,hy+TILE/2-3);
+  bctx.font='bold 9px sans-serif';bctx.fillStyle='#e88ca0';
+  bctx.fillText('小偷老巢',hx+TILE/2,hy+TILE-8);
+  // 墙
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    if(grid[y][x]!==1)continue;
+    const px=x*TILE,py=y*TILE;
+    bctx.fillStyle='#2c3d6b';roundRect(bctx,px+1.5,py+1.5,TILE-3,TILE-3,7);bctx.fill();
+    bctx.fillStyle='rgba(255,255,255,.10)';roundRect(bctx,px+4,py+4,TILE-8,6,3);bctx.fill();
+    bctx.fillStyle='rgba(0,0,0,.28)';bctx.fillRect(px+4,py+TILE-8,TILE-8,4);
+  }
+}
+
+// ===================== 关卡 =====================
+function startGame(key){
+  diffKey=key;cfg=DIFF[key];score=0;level=1;
+  startLevel();state='playing';hideOverlay();
+}
+function startLevel(){
+  grid=genMaze();buildBG();
+  player={cx:1,cy:1,x:1.5*TILE,y:1.5*TILE,tx:null,ty:null,dir:null,queued:null};
+  hideoutField=bfs([[hideout.x,hideout.y]]);
+  // 放金币
+  const distMap=bfs([[1,1]]);
+  totalGold=Math.min(8+level,14);
+  const cand=[];
+  for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++){
+    if(open(x,y)&&!(x===hideout.x&&y===hideout.y)&&distMap[y][x]>=6)cand.push([x,y]);
+  }
+  shuffle(cand);
+  golds=[];
+  for(const [x,y] of cand){
+    if(golds.length>=totalGold)break;
+    if(golds.every(g=>Math.abs(g.x-x)+Math.abs(g.y-y)>=2))
+      golds.push({x,y,phase:Math.random()*6.28});
+  }
+  goldFieldDirty=true;
+  // 小偷出生
+  const count=Math.min(cfg.thieves+Math.floor((level-1)/2),6);
+  const speed=Math.min(cfg.thief+0.12*(level-1),cfg.police-0.3);
+  const far=cand.filter(([x,y])=>distMap[y][x]>=10&&!golds.some(g=>g.x===x&&g.y===y));
+  const fallback=far.length>=count?far:cand.filter(([x,y])=>distMap[y][x]>=7&&!golds.some(g=>g.x===x&&g.y===y));
+  thieves=[];
+  for(let i=0;i<count&&i<fallback.length;i++){
+    const [x,y]=fallback.splice((Math.random()*fallback.length)|0,1)[0];
+    thieves.push({cx:x,cy:y,x:(x+0.5)*TILE,y:(y+0.5)*TILE,tx:null,ty:null,dx:0,dy:0,
+      speed,carrying:false,wob:Math.random()*6.28});
+  }
+  stolen=0;timeLeft=cfg.time+Math.min((level-1)*5,30);
+  powerups=[];particles=[];floaters=[];
+  effects={speed:0,freeze:0};combo=0;comboTimer=0;
+  powerupTimer=8;fieldAcc=0;tickAcc=0;
+  policeField=bfs([[player.cx,player.cy]]);
+}
+
+// ===================== 移动系统 =====================
+function stepEntity(e,dist,choose,onArrive){
+  let guard=8;
+  while(dist>0&&guard-->0){
+    if(e.tx==null){choose(e);if(e.tx==null)break;}
+    const txc=(e.tx+0.5)*TILE,tyc=(e.ty+0.5)*TILE;
+    const dx=txc-e.x,dy=tyc-e.y;
+    const rem=Math.abs(dx)+Math.abs(dy);
+    if(rem<=dist){
+      e.x=txc;e.y=tyc;e.cx=e.tx;e.cy=e.ty;e.tx=null;e.ty=null;
+      dist-=rem;
+      if(onArrive)onArrive(e);
+    }else{
+      e.x+=Math.sign(dx)*dist;e.y+=Math.sign(dy)*dist;dist=0;
+    }
+  }
+}
+function playerChoose(e){
+  for(const d of [e.queued,e.dir]){
+    if(!d)continue;
+    const [dx,dy]=VECD[d];
+    if(open(e.cx+dx,e.cy+dy)){
+      e.tx=e.cx+dx;e.ty=e.cy+dy;e.dir=d;e.queued=null;return;
+    }
+  }
+  e.queued=null;e.tx=null;e.ty=null;
+}
+function thiefChoose(e){
+  const pd=policeField?policeField[e.cy][e.cx]:99;
+  const flee=pd<=cfg.panic||(golds.length===0&&!e.carrying);
+  let best=null,bs=-Infinity;
+  for(const [dx,dy] of DIRS4){
+    const nx=e.cx+dx,ny=e.cy+dy;
+    if(!open(nx,ny))continue;
+    const npd=policeField?policeField[ny][nx]:99;
+    let s;
+    if(flee){
+      s=npd*10;
+      if(e.carrying&&hideoutField)s+=(hideoutField[ny][nx]-hideoutField[e.cy][e.cx])*3;
+      if(dx===-e.dx&&dy===-e.dy)s-=2.5;
+    }else{
+      const f=e.carrying?hideoutField:goldField;
+      if(f){
+        const nf=f[ny][nx],cf=f[e.cy][e.cx];
+        s=(cf-nf)*10+npd*0.6;
+        if(e.carrying&&nf===0)s+=100;
+      }else s=npd*10;
+      if(npd<=2)s-=8;
+      if(dx===-e.dx&&dy===-e.dy)s-=2;
+    }
+    if(npd===0)s-=200;
+    if(s>bs){bs=s;best=[nx,ny,dx,dy];}
+  }
+  if(best){e.tx=best[0];e.ty=best[1];e.dx=best[2];e.dy=best[3];}
+}
+function thiefArrive(e){
+  if(!e.carrying){
+    const gi=golds.findIndex(g=>g.x===e.cx&&g.y===e.cy);
+    if(gi>=0){
+      golds.splice(gi,1);goldFieldDirty=true;e.carrying=true;
+      beep(620,0.06,'triangle',0.08);
+      floater(e.x,e.y-14,'金币被搬走!','#ff9d5c');
+    }
+  }else if(e.cx===hideout.x&&e.cy===hideout.y){
+    stolen++;e.carrying=false;shake=5;
+    beep(280,0.25,'sawtooth',0.15,-180);
+    floater(e.x,e.y-14,'-1 金币被偷','#ff5c5c');
+    if(stolen>=totalGold)gameOver('小偷把金币全部偷走了！');
+  }
+}
+
+// ===================== 输入 =====================
+function setDir(d){
+  if(!player)return;
+  player.queued=d;
+  if(player.tx!=null){ // 允许立即掉头
+    const mdx=player.tx-player.cx,mdy=player.ty-player.cy;
+    const cur=mdx>0?'R':mdx<0?'L':mdy>0?'D':'U';
+    if(OPP[cur]===d){
+      const ocx=player.cx,ocy=player.cy;
+      player.cx=player.tx;player.cy=player.ty;
+      player.tx=ocx;player.ty=ocy;player.dir=d;
+    }
+  }else player.dir=d;
+}
+const KEYMAP={ArrowUp:'U',KeyW:'U',ArrowDown:'D',KeyS:'D',ArrowLeft:'L',KeyA:'L',ArrowRight:'R',KeyD:'R'};
+window.addEventListener('keydown',e=>{
+  if(KEYMAP[e.code]){
+    e.preventDefault();ensureAudio();
+    if(state==='playing')setDir(KEYMAP[e.code]);
+  }else if(e.code==='KeyP'||e.code==='Escape'){
+    if(state==='playing')pauseGame();else if(state==='paused')resumeGame();
+  }else if(e.code==='KeyM'){
+    toggleMute();
+  }else if(e.code==='Space'||e.code==='Enter'){
+    const b=ovpanel.querySelector('button.primary');
+    if(b&&overlay.classList.contains('show')){e.preventDefault();b.click();}
+  }
+});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing')pauseGame();});
+// 触屏滑动
+let tsx=0,tsy=0;
+cv.addEventListener('touchstart',e=>{const t=e.touches[0];tsx=t.clientX;tsy=t.clientY;},{passive:true});
+cv.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  const t=e.touches[0],dx=t.clientX-tsx,dy=t.clientY-tsy;
+  if(Math.abs(dx)>24||Math.abs(dy)>24){
+    setDir(Math.abs(dx)>Math.abs(dy)?(dx>0?'R':'L'):(dy>0?'D':'U'));
+    tsx=t.clientX;tsy=t.clientY;
+  }
+},{passive:false});
+if('ontouchstart' in window)dpad.style.display='grid';
+dpad.querySelectorAll('button').forEach(b=>{
+  b.addEventListener('pointerdown',e=>{e.preventDefault();ensureAudio();if(state==='playing')setDir(b.dataset.d);});
+});
+
+// ===================== HUD 按钮 =====================
+function toggleMute(){muted=!muted;$('btnMute').textContent=muted?'🔇':'🔊';}
+$('btnMute').addEventListener('click',()=>{ensureAudio();toggleMute();});
+$('btnPause').addEventListener('click',()=>{if(state==='playing')pauseGame();else if(state==='paused')resumeGame();});
+
+// ===================== 覆盖层 =====================
+function showOverlay(html){ovpanel.innerHTML=html;overlay.classList.add('show');}
+function hideOverlay(){overlay.classList.remove('show');}
+function menuHTML(){
+  return `
+  <div class="title">🚨 警察抓小偷</div>
+  <div class="sub">实时追逐 · 网页版</div>
+  <div class="desc">
+    👮 你是警察，用 <b>方向键 / WASD</b>（触屏滑动）追捕所有小偷<br>
+    💰 小偷会捡起金币搬回右下角的 <b>老巢</b>，金币全被偷走就输了<br>
+    ⏱ 在时间耗尽前抓住所有小偷，进入下一关<br>
+    ⚡ 加速道具：警察短暂提速 &nbsp;|&nbsp; ❄️ 冻结道具：小偷短暂定身<br>
+    🔥 连续快速抓捕可叠加 <b>连击倍数</b>，得分翻倍
+  </div>
+  <div class="btns">
+    <button data-action="start-easy">🙂 简单</button>
+    <button data-action="start-normal" class="primary">😤 普通</button>
+    <button data-action="start-hard">😈 困难</button>
+  </div>
+  <div class="hiscore">🏆 历史最高分：${high}</div>`;
+}
+function showMenu(){state='menu';grid=genMaze();buildBG();showOverlay(menuHTML());}
+function pauseGame(){
+  state='paused';
+  showOverlay(`<div class="title">⏸ 游戏暂停</div>
+  <div class="sub">第 ${level} 关 · 当前分数 ${score}</div>
+  <div class="btns">
+    <button data-action="resume" class="primary">▶ 继续游戏</button>
+    <button data-action="menu">🏠 回主菜单</button>
+  </div>`);
+}
+function resumeGame(){state='playing';hideOverlay();}
+function levelClear(){
+  const timeBonus=Math.max(0,Math.ceil(timeLeft))*2;
+  const goldBonus=golds.length*10;
+  score+=timeBonus+goldBonus;
+  high=Math.max(high,score);localStorage.setItem('pct-high',high);
+  state='levelclear';
+  chord([523,659,784,1046],0.09,0.14,'triangle',0.14);
+  showOverlay(`<div class="title">🎉 通关！</div>
+  <div class="sub">第 ${level} 关完成，小偷全部落网</div>
+  <div class="rows">
+    <div>⏱ 时间奖励 <span>+${timeBonus}</span></div>
+    <div>💰 金币奖励 <span>+${goldBonus}</span></div>
+    <div>🏆 总分 <span>${score}</span></div>
+  </div>
+  <div class="btns">
+    <button data-action="next" class="primary">➡ 下一关</button>
+    <button data-action="menu">🏠 主菜单</button>
+  </div>`);
+}
+function gameOver(reason){
+  high=Math.max(high,score);localStorage.setItem('pct-high',high);
+  state='gameover';
+  chord([392,311,262,196],0.14,0.22,'sawtooth',0.1);
+  showOverlay(`<div class="title">💥 游戏结束</div>
+  <div class="sub">${reason}</div>
+  <div class="rows">
+    <div>到达关卡：第 <span>${level}</span> 关</div>
+    <div>最终得分：<span>${score}</span></div>
+    <div>🏆 历史最高：${high}</div>
+  </div>
+  <div class="btns">
+    <button data-action="retry" class="primary">🔄 重新挑战（${cfg.label}）</button>
+    <button data-action="menu">🏠 主菜单</button>
+  </div>`);
+}
+ovpanel.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-action]');if(!b)return;
+  ensureAudio();
+  const a=b.dataset.action;
+  if(a.startsWith('start-'))startGame(a.slice(6));
+  else if(a==='resume')resumeGame();
+  else if(a==='next'){level++;startLevel();state='playing';hideOverlay();}
+  else if(a==='retry')startGame(diffKey);
+  else if(a==='menu')showMenu();
+});
+
+// ===================== 更新 =====================
+function update(dt){
+  animT+=dt;
+  // 计时
+  timeLeft-=dt;
+  if(timeLeft<=0){timeLeft=0;gameOver('时间耗尽，小偷逍遥法外！');return;}
+  if(timeLeft<=10){tickAcc+=dt;if(tickAcc>=1){tickAcc-=1;beep(1200,0.045,'sine',0.07);}}
+  // 效果计时
+  if(effects.speed>0)effects.speed-=dt;
+  if(effects.freeze>0)effects.freeze-=dt;
+  if(comboTimer>0){comboTimer-=dt;if(comboTimer<=0)combo=0;}
+  if(shake>0)shake=Math.max(0,shake-dt*18);
+  // 场
+  fieldAcc-=dt;
+  if(fieldAcc<=0){policeField=bfs([[player.cx,player.cy]]);fieldAcc=0.22;}
+  if(goldFieldDirty){
+    goldField=golds.length?bfs(golds.map(g=>[g.x,g.y])):null;
+    goldFieldDirty=false;
+  }
+  // 道具刷新
+  powerupTimer-=dt;
+  if(powerupTimer<=0&&powerups.length<2){
+    powerupTimer=10+Math.random()*5;
+    const cands=[];
+    for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++){
+      if(open(x,y)&&!(x===hideout.x&&y===hideout.y)
+        &&!golds.some(g=>g.x===x&&g.y===y)
+        &&!powerups.some(p=>p.x===x&&p.y===y))cands.push([x,y]);
+    }
+    if(cands.length){
+      const [x,y]=cands[(Math.random()*cands.length)|0];
+      powerups.push({x,y,kind:Math.random()<0.5?'speed':'freeze',phase:Math.random()*6.28});
+    }
+  }
+  // 玩家移动
+  const pspd=cfg.police*(effects.speed>0?1.55:1);
+  stepEntity(player,pspd*TILE*dt,playerChoose,null);
+  // 小偷移动 + 到格事件
+  if(effects.freeze<=0){
+    for(const t of thieves){
+      stepEntity(t,t.speed*TILE*dt,thiefChoose,thiefArrive);
+      if(state!=='playing')break;
+    }
+  }
+  if(state!=='playing')return;
+  // 抓捕判定
+  const CR=TILE*0.62;
+  for(let i=thieves.length-1;i>=0;i--){
+    const t=thieves[i];
+    const d=Math.hypot(t.x-player.x,t.y-player.y);
+    if(d<CR){
+      thieves.splice(i,1);
+      combo=comboTimer>0?combo+1:1;comboTimer=4;
+      const gained=100*combo+level*10;
+      score+=gained;shake=6;
+      burst(t.x,t.y);
+      chord([523,659,784],0.05,0.08,'square',0.13);
+      floater(t.x,t.y-16,`+${gained}${combo>1?` 连击x${combo}`:''}`,'#ffd166');
+      if(t.carrying){ // 赃物掉回地图
+        golds.push({x:t.cx,y:t.cy,phase:Math.random()*6.28});
+        goldFieldDirty=true;
+        floater(t.x,t.y-38,'赃物掉落!','#7ef0a0');
+      }
+    }
+  }
+  // 道具拾取
+  for(let i=powerups.length-1;i>=0;i--){
+    const p=powerups[i];
+    const px=(p.x+0.5)*TILE,py=(p.y+0.5)*TILE;
+    if(Math.hypot(px-player.x,py-player.y)<CR){
+      powerups.splice(i,1);
+      if(p.kind==='speed'){effects.speed=6;beep(880,0.18,'square',0.14,420);floater(px,py-14,'⚡ 警察加速!','#ffd166');}
+      else{effects.freeze=3.5;beep(1046,0.12,'sine',0.14,-500);floater(px,py-14,'❄️ 小偷冻结!','#9adcff');}
+    }
+  }
+  // 粒子/浮字
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=260*dt;
+    if(p.life<=0)particles.splice(i,1);
+  }
+  for(let i=floaters.length-1;i>=0;i--){
+    const f=floaters[i];f.life-=dt;f.y-=28*dt;
+    if(f.life<=0)floaters.splice(i,1);
+  }
+  // 胜利判定
+  if(thieves.length===0)levelClear();
+}
+
+// ===================== 渲染 =====================
+function drawEmoji(c,ch,x,y,size){
+  c.font=size+'px '+EMOJI_FONT;
+  c.textAlign='center';c.textBaseline='middle';
+  c.fillText(ch,x,y);
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  if(shake>0)ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);
+  ctx.drawImage(bg,0,0,W,H);
+  // 金币
+  for(const g of golds){
+    const bob=Math.sin(animT*3+g.phase)*3;
+    drawEmoji(ctx,'💰',(g.x+0.5)*TILE,(g.y+0.5)*TILE+bob,20);
+  }
+  // 道具
+  for(const p of powerups){
+    const px=(p.x+0.5)*TILE,py=(p.y+0.5)*TILE;
+    const pr=13+Math.sin(animT*5+p.phase)*2.5;
+    ctx.fillStyle='rgba(255,255,255,0.12)';
+    ctx.beginPath();ctx.arc(px,py,pr,0,6.283);ctx.fill();
+    drawEmoji(ctx,p.kind==='speed'?'⚡':'❄️',px,py,20);
+  }
+  // 小偷
+  for(const t of thieves){
+    ctx.fillStyle='rgba(0,0,0,0.35)';
+    ctx.beginPath();ctx.ellipse(t.x,t.y+11,11,4,0,0,6.283);ctx.fill();
+    if(effects.freeze>0){
+      ctx.fillStyle='rgba(120,200,255,0.28)';
+      ctx.beginPath();ctx.arc(t.x,t.y,15,0,6.283);ctx.fill();
+      drawEmoji(ctx,'❄️',t.x+11,t.y-11,12);
+    }
+    drawEmoji(ctx,'🥷',t.x,t.y,26);
+    if(t.carrying)drawEmoji(ctx,'💰',t.x+11,t.y-11,13);
+  }
+  // 警察
+  if(player){
+    ctx.fillStyle='rgba(0,0,0,0.35)';
+    ctx.beginPath();ctx.ellipse(player.x,player.y+11,11,4,0,0,6.283);ctx.fill();
+    if(effects.speed>0){
+      ctx.strokeStyle='rgba(255,209,102,0.85)';ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.arc(player.x,player.y,16+Math.sin(animT*8)*2,0,6.283);ctx.stroke();
+    }
+    drawEmoji(ctx,'👮',player.x,player.y,27);
+  }
+  // 粒子
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life/0.6);
+    ctx.fillStyle=p.color;
+    ctx.fillRect(p.x-2,p.y-2,4,4);
+  }
+  ctx.globalAlpha=1;
+  // 浮字
+  for(const f of floaters){
+    ctx.globalAlpha=Math.max(0,Math.min(1,f.life));
+    ctx.font='bold 13px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.strokeStyle='rgba(0,0,0,.7)';ctx.lineWidth=3;
+    ctx.strokeText(f.text,f.x,f.y);
+    ctx.fillStyle=f.color;ctx.fillText(f.text,f.x,f.y);
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+function updateHUD(){
+  hLevel.textContent=state==='menu'?'-':level;
+  hScore.textContent=score;
+  hTime.textContent=state==='menu'?'-':Math.ceil(timeLeft);
+  hTime.classList.toggle('low',state==='playing'&&timeLeft<=10);
+  hGold.textContent=state==='menu'?'-':(golds.length+thieves.filter(t=>t.carrying).length)+'/'+totalGold;
+  hThief.textContent=state==='menu'?'-':thieves.length;
+  hStolen.textContent=state==='menu'?'-':stolen+'/'+totalGold;
+}
+
+// ===================== 主循环 =====================
+let last=performance.now();
+function frame(ts){
+  const dt=Math.min((ts-last)/1000,0.05);last=ts;
+  if(state==='playing')update(dt);
+  else animT+=dt;
+  draw();updateHUD();
+  requestAnimationFrame(frame);
+}
+grid=genMaze();buildBG();
+showMenu();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
